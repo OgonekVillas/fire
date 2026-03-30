@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/sync/bnovo/cron",
-      "schedule": "0 */4 * * *"
+      "schedule": "0 3 * * *"
     }
   ]
 }
