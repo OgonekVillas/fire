@@ -1,95 +1,51 @@
 import { NextResponse } from 'next/server'
+import { supabase } from '@/lib/supabase'
 
-const BNOVO_BASE = 'https://api.pms.bnovo.ru'
-const ACCOUNT_ID = process.env.BNOVO_ACCOUNT_ID!
-const TOKEN = process.env.BNOVO_TOKEN!
+function monthRange(offsetMonths: number) {
+  const now = new Date()
+  const d = new Date(now.getFullYear(), now.getMonth() + offsetMonths, 1)
+  const from = d.toISOString().split('T')[0]
+  const last = new Date(d.getFullYear(), d.getMonth() + 1, 0)
+  const to = last.toISOString().split('T')[0]
+  return { from, to, year: d.getFullYear(), month: d.getMonth() + 1 }
+}
 
 export async function GET() {
-  if (!TOKEN) return NextResponse.json({ error: 'Not configured' }, { status: 403 })
+  const prev = monthRange(-1)
+  const curr = monthRange(0)
 
-  // Auth
-  const { apiPassword } = (() => {
-    const decoded = Buffer.from(TOKEN, 'base64').toString('utf-8')
-    const [a] = decoded.split('|')
-    return { apiPassword: a }
-  })()
+  const [prevRev, prevExp, currRev, currExp] = await Promise.all([
+    supabase.from('revenue').select('amount').gte('date', prev.from).lte('date', prev.to),
+    supabase.from('expenses').select('amount').gte('date', prev.from).lte('date', prev.to),
+    supabase.from('revenue').select('amount').gte('date', curr.from).lte('date', curr.to),
+    supabase.from('expenses').select('amount').gte('date', curr.from).lte('date', curr.to),
+  ])
 
-  let jwt: string | null = null
-  for (const pwd of [TOKEN, apiPassword]) {
-    try {
-      const res = await fetch(`${BNOVO_BASE}/api/v1/auth`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ id: ACCOUNT_ID, password: pwd }),
-      })
-      if (res.ok) {
-        const d = await res.json()
-        jwt = d?.data?.access_token || null
-        if (jwt) break
-      }
-    } catch { /* ignore */ }
-  }
+  const sum = (rows: { amount: number }[] | null) =>
+    (rows ?? []).reduce((a, r) => a + Number(r.amount), 0)
 
-  if (!jwt) return NextResponse.json({ error: 'Auth failed' }, { status: 401 })
+  const prevRevTotal = sum(prevRev.data)
+  const prevExpTotal = sum(prevExp.data)
+  const prevProfit = prevRevTotal - prevExpTotal
 
-  const headers = { Authorization: `Bearer ${jwt}`, Accept: 'application/json' }
+  const currRevTotal = sum(currRev.data)
+  const currExpTotal = sum(currExp.data)
+  const currProfit = currRevTotal - currExpTotal
 
+  // Проецируем текущий месяц до конца на основе прошлого
   const today = new Date()
-  const dateFrom = today.toISOString().split('T')[0]
-  const dateTo = new Date(today.getTime() + 90 * 86400000).toISOString().split('T')[0]
+  const dayOfMonth = today.getDate()
+  const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate()
+  const progress = dayOfMonth / daysInMonth
 
-  interface Booking {
-    id: number | string
-    amount?: number; total_price?: number; price?: number; sum?: number
-    room_name?: string
-    status?: { id?: number; name?: string } | string
-    dates?: { arrival?: string; departure?: string }
-    arrival?: string
-  }
+  const projectedRev = progress > 0 ? Math.round(currRevTotal / progress) : 0
+  const projectedProfit = progress > 0 ? Math.round(currProfit / progress) : 0
 
-  const bookings: Booking[] = []
-  const PAGE = 50
-
-  for (let offset = 0; offset < 1000; offset += PAGE) {
-    try {
-      const res = await fetch(
-        `${BNOVO_BASE}/api/v1/bookings?date_from=${dateFrom}&date_to=${dateTo}&data_type=checkmate&limit=${PAGE}&offset=${offset}`,
-        { headers }
-      )
-      if (!res.ok) break
-      const d = await res.json() as Record<string, unknown>
-      const nested = (d.data && typeof d.data === 'object' && !Array.isArray(d.data)) ? d.data as Record<string, unknown> : null
-      const arr = Array.isArray(d) ? d as Booking[]
-        : nested && Array.isArray(nested.bookings) ? nested.bookings as Booking[]
-        : Array.isArray(d.bookings) ? d.bookings as Booking[]
-        : Array.isArray(d.data) ? d.data as Booking[]
-        : null
-      if (!arr) break
-      bookings.push(...arr)
-      if (arr.length < PAGE) break
-    } catch { break }
-  }
-
-  // Filter cancelled
-  const active = bookings.filter(b => {
-    const statusId = typeof b.status === 'object' ? b.status?.id : null
-    const statusName = typeof b.status === 'object' ? (b.status?.name || '') : (b.status || '')
-    return statusId !== 5 && !['отменён', 'отменена', 'cancelled', 'canceled'].includes(String(statusName).toLowerCase())
+  return NextResponse.json({
+    prev: { from: prev.from, to: prev.to, month: prev.month, year: prev.year, revenue: prevRevTotal, expenses: prevExpTotal, profit: prevProfit },
+    curr: { from: curr.from, to: curr.to, month: curr.month, year: curr.year, revenue: currRevTotal, expenses: currExpTotal, profit: currProfit },
+    projected: { revenue: projectedRev, profit: projectedProfit },
+    progress: Math.round(progress * 100),
+    daysLeft: daysInMonth - dayOfMonth,
   })
-
-  // Group by month
-  const byMonth: Record<string, { count: number; revenue: number }> = {}
-  for (const b of active) {
-    const date = (b.dates?.arrival || b.arrival || dateFrom).slice(0, 7) // YYYY-MM
-    const amount = Number(b.amount || b.total_price || b.price || b.sum) || 0
-    if (!byMonth[date]) byMonth[date] = { count: 0, revenue: 0 }
-    byMonth[date].count++
-    byMonth[date].revenue += amount
-  }
-
-  const months = Object.entries(byMonth)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([month, v]) => ({ month, ...v }))
-
-  return NextResponse.json({ total: active.length, months })
 }

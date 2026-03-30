@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
 
 // Координаты базы отдыха — задайте через RESORT_LAT / RESORT_LON в .env.local
-const LAT = process.env.RESORT_LAT || '56.83'
-const LON = process.env.RESORT_LON || '35.91'
+const LAT = process.env.RESORT_LAT || '55.7558'
+const LON = process.env.RESORT_LON || '37.6173'
 
 export async function GET() {
   try {

@@ -419,7 +419,7 @@ function WeatherWidget() {
     <div className="card fu" style={{ padding: '12px 16px' }}>
       <div className="ch" style={{ marginBottom: 10 }}>
         <span className="ch-title">🌤 Погода · 7 дней</span>
-        <span style={{ fontSize: '.68rem', color: 'var(--muted)' }}>Тверская обл.</span>
+        <span style={{ fontSize: '.68rem', color: 'var(--muted)' }}>Москва</span>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 4 }}>
         {days.map(day => {
@@ -451,58 +451,73 @@ function WeatherWidget() {
 }
 
 // ─── Forecast Widget ───────────────────────────────────────────────
-interface ForecastMonth { month: string; count: number; revenue: number }
+interface ForecastData {
+  prev: { month: number; year: number; revenue: number; expenses: number; profit: number }
+  curr: { month: number; year: number; revenue: number; expenses: number; profit: number }
+  projected: { revenue: number; profit: number }
+  progress: number
+  daysLeft: number
+}
 
 function ForecastWidget() {
-  const [data, setData] = useState<{ total: number; months: ForecastMonth[] }|null>(null)
+  const [data, setData] = useState<ForecastData|null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     fetch('/api/forecast').then(r => r.json()).then(d => { setData(d); setLoading(false) }).catch(() => setLoading(false))
   }, [])
 
-  const monthName = (ym: string) => {
-    const [y, m] = ym.split('-')
-    return MONTH_RU[parseInt(m)-1] + ' ' + y.slice(2)
-  }
-
   if (loading) return (
-    <div className="card fu" style={{ padding: '12px 16px', fontSize: '.78rem', color: 'var(--muted)' }}>
-      Загрузка прогноза...
-    </div>
+    <div className="card fu" style={{ padding: '12px 16px', fontSize: '.78rem', color: 'var(--muted)' }}>Загрузка прогноза...</div>
   )
-  if (!data || data.months.length === 0) return (
-    <div className="card fu" style={{ padding: '14px 16px' }}>
-      <div className="ch-title" style={{ fontSize: '.85rem' }}>📅 Прогноз выручки</div>
-      <div style={{ padding: '16px 0', textAlign: 'center', fontSize: '.8rem', color: 'var(--muted)' }}>
-        Нет будущих бронирований в Bnovo
-      </div>
-    </div>
-  )
+  if (!data) return null
 
-  const maxRev = Math.max(...data.months.map(m => m.revenue))
+  const prevMonthName = MONTH_RU[data.prev.month - 1] + ' ' + String(data.prev.year).slice(2)
+  const currMonthName = MONTH_RU[data.curr.month - 1] + ' ' + String(data.curr.year).slice(2)
+
+  const revDelta = data.prev.revenue > 0
+    ? Math.round((data.projected.revenue - data.prev.revenue) / data.prev.revenue * 100)
+    : null
+  const profitDelta = data.prev.profit > 0
+    ? Math.round((data.projected.profit - data.prev.profit) / data.prev.profit * 100)
+    : null
 
   return (
     <div className="card fu">
       <div className="ch">
-        <span className="ch-title">📅 Прогноз выручки · Bnovo</span>
-        <span style={{ fontSize: '.72rem', color: 'var(--muted)' }}>{data.total} броней на 90 дн.</span>
+        <span className="ch-title">📅 Прогноз · {currMonthName}</span>
+        <span style={{ fontSize: '.72rem', color: 'var(--muted)' }}>{data.progress}% месяца · осталось {data.daysLeft} дн.</span>
       </div>
-      <div style={{ padding: '10px 16px 14px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-        {data.months.map(m => (
-          <div key={m.month}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-              <span style={{ fontSize: '.82rem', fontWeight: 600, textTransform: 'capitalize' }}>{monthName(m.month)}</span>
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                <span style={{ fontSize: '.72rem', color: 'var(--muted)' }}>{m.count} броней</span>
-                <span style={{ fontSize: '.88rem', fontWeight: 700, color: 'var(--green-pos)' }}>
-                  {fmt(m.revenue, true)} ₽
-                </span>
+      <div style={{ padding: '12px 16px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+
+        {/* Прогресс месяца */}
+        <ProgressBar value={data.progress} max={100} color="#eb671c" />
+
+        {/* Сравнение */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 4 }}>
+          {[
+            { label: 'Выручка', prev: data.prev.revenue, proj: data.projected.revenue, delta: revDelta, color: '#eb671c' },
+            { label: 'Расходы', prev: data.prev.expenses, proj: data.curr.expenses, delta: null, color: '#1f2e1a' },
+            { label: 'Прибыль', prev: data.prev.profit, proj: data.projected.profit, delta: profitDelta, color: data.projected.profit >= 0 ? 'var(--green-pos)' : 'var(--red)' },
+          ].map(({ label, prev, proj, delta, color }) => (
+            <div key={label} style={{ background: 'var(--cream)', borderRadius: 10, padding: '10px 12px' }}>
+              <div style={{ fontSize: '.68rem', color: 'var(--muted)', marginBottom: 4 }}>{label}</div>
+              <div style={{ fontSize: '.82rem', fontWeight: 700, color }}>{fmt(proj, true)} ₽</div>
+              <div style={{ fontSize: '.65rem', color: 'var(--muted)', marginTop: 2 }}>
+                {prevMonthName}: {fmt(prev, true)} ₽
               </div>
+              {delta !== null && (
+                <div style={{ fontSize: '.68rem', fontWeight: 700, color: delta >= 0 ? 'var(--green-pos)' : 'var(--red)', marginTop: 2 }}>
+                  {delta >= 0 ? '▲ +' : '▼ '}{delta}%
+                </div>
+              )}
             </div>
-            <ProgressBar value={m.revenue} max={maxRev} color="#1f2e1a" />
-          </div>
-        ))}
+          ))}
+        </div>
+
+        <div style={{ fontSize: '.68rem', color: 'var(--muted)', paddingTop: 2 }}>
+          * Прогноз = факт на сегодня ÷ {data.progress}% месяца
+        </div>
       </div>
     </div>
   )
@@ -606,7 +621,7 @@ function TransactionHistory() {
   const [loaded, setLoaded] = useState(false)
 
   const load = useCallback(async () => {
-    const from = new Date(); from.setDate(from.getDate() - 7)
+    const from = new Date(); from.setDate(from.getDate() - 30)
     const fromStr = from.toISOString().split('T')[0]
     const [er, rr] = await Promise.all([
       fetch(`/api/expenses?from=${fromStr}`).then(r => r.json()),
@@ -647,7 +662,7 @@ function TransactionHistory() {
   return (
     <div className="card fu s8">
       <div className="ch">
-        <span className="ch-title">📋 История · последние 7 дней</span>
+        <span className="ch-title">📋 История · последние 30 дней</span>
         <span style={{ fontSize: '.72rem', color: 'var(--muted)' }}>{expenses.length + revenues.length} записей</span>
       </div>
       <div style={{ padding: '8px 10px 4px' }}>
@@ -662,7 +677,7 @@ function TransactionHistory() {
       {!loaded
         ? <div style={{ padding: '20px', textAlign: 'center', color: 'var(--muted)', fontSize: '.82rem' }}>Загрузка...</div>
         : shown.length === 0
-          ? <div style={{ padding: '20px', textAlign: 'center', color: 'var(--muted)', fontSize: '.82rem' }}>Нет записей за последние 7 дней</div>
+          ? <div style={{ padding: '20px', textAlign: 'center', color: 'var(--muted)', fontSize: '.82rem' }}>Нет записей за последние 30 дней</div>
           : <div style={{ padding: '4px 0 8px' }}>
               {shown.map(x => (
                 x.kind === 'expense'
