@@ -67,7 +67,7 @@ export async function GET(req: NextRequest) {
       return (property ? q.eq('property', property) : q).gte('date', monthStart).lte('date', todayStr)
     })(),
     (() => {
-      const q = supabase.from('revenue').select('date, amount')
+      const q = supabase.from('revenue').select('date, amount, source')
       return (property ? q.eq('property', property) : q).gte('date', monthStart).lte('date', todayStr)
     })(),
 
@@ -115,6 +115,13 @@ export async function GET(req: NextRequest) {
     categories[e.category] = (categories[e.category] || 0) + Number(e.amount)
   }
 
+  // Выручка по источникам (проживание vs допы)
+  const revBySource: Record<string, number> = {}
+  for (const r of (revMonthByDay.data ?? [])) {
+    const src = (r as { source?: string }).source || 'другое'
+    revBySource[src] = (revBySource[src] || 0) + Number(r.amount)
+  }
+
   // План vs факт
   const plan = planMonth.data ?? null
   const revPlanTotal = plan?.revenue_plan ?? 0
@@ -147,7 +154,7 @@ export async function GET(req: NextRequest) {
   }
 
   return NextResponse.json({
-    revenue: { today: revTodayTotal, week: revWeekTotal, month: revMonthTotal },
+    revenue: { today: revTodayTotal, week: revWeekTotal, month: revMonthTotal, bySource: revBySource },
     expenses: { today: expTodayTotal, week: expWeekTotal, month: expMonthTotal },
     profit: { month: profitMonth },
     plan: {

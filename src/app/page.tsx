@@ -8,7 +8,7 @@ import { EXPENSE_CATEGORIES, EXPENSE_TYPES, REVENUE_SOURCES, PROPERTIES, HOUSES,
 interface AiInsight { label: string; text: string; type: 'warning' | 'info' | 'good' }
 
 interface DashData {
-  revenue: { today: number; week: number; month: number }
+  revenue: { today: number; week: number; month: number; bySource: Record<string, number> }
   expenses: { today: number; week: number; month: number }
   profit: { month: number }
   plan: {
@@ -29,18 +29,18 @@ interface PnlMonth {
 
 // ─── PnL months: Aug 2025 → Jul 2026 (статический список) ────────
 const PNL_MONTHS = [
-  { label: 'Авг 25', from: '2025-08-01', to: '2025-08-31' },
-  { label: 'Сен 25', from: '2025-09-01', to: '2025-09-30' },
-  { label: 'Окт 25', from: '2025-10-01', to: '2025-10-31' },
-  { label: 'Ноя 25', from: '2025-11-01', to: '2025-11-30' },
-  { label: 'Дек 25', from: '2025-12-01', to: '2025-12-31' },
-  { label: 'Янв 26', from: '2026-01-01', to: '2026-01-31' },
-  { label: 'Фев 26', from: '2026-02-01', to: '2026-02-28' },
-  { label: 'Мар 26', from: '2026-03-01', to: '2026-03-31' },
   { label: 'Апр 26', from: '2026-04-01', to: '2026-04-30' },
   { label: 'Май 26', from: '2026-05-01', to: '2026-05-31' },
   { label: 'Июн 26', from: '2026-06-01', to: '2026-06-30' },
   { label: 'Июл 26', from: '2026-07-01', to: '2026-07-31' },
+  { label: 'Авг 26', from: '2026-08-01', to: '2026-08-31' },
+  { label: 'Сен 26', from: '2026-09-01', to: '2026-09-30' },
+  { label: 'Окт 26', from: '2026-10-01', to: '2026-10-31' },
+  { label: 'Ноя 26', from: '2026-11-01', to: '2026-11-30' },
+  { label: 'Дек 26', from: '2026-12-01', to: '2026-12-31' },
+  { label: 'Янв 27', from: '2027-01-01', to: '2027-01-31' },
+  { label: 'Фев 27', from: '2027-02-01', to: '2027-02-28' },
+  { label: 'Мар 27', from: '2027-03-01', to: '2027-03-31' },
 ]
 
 const PNL_ROWS = [
@@ -837,6 +837,19 @@ export default function Home() {
                 <span style={{ color: 'var(--muted)' }}>Сег.&nbsp;<b style={{ color: 'var(--text)' }}>{fmt(data.revenue.today, true) || '—'}</b></span>
                 <span style={{ color: 'var(--muted)' }}>7 дн.&nbsp;<b style={{ color: 'var(--text)' }}>{fmt(data.revenue.week, true) || '—'}</b></span>
               </div>
+              {Object.keys(data.revenue.bySource).length > 0 && (
+                <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: '4px 10px' }}>
+                  {[['бронирование','🏠 Проживание'],['доп. услуга','✨ Допы']].map(([src, label]) => {
+                    const v = data.revenue.bySource[src] || 0
+                    if (!v) return null
+                    return (
+                      <span key={src} style={{ fontSize: '.68rem', color: 'var(--muted)' }}>
+                        {label}&nbsp;<b style={{ color: 'var(--text)' }}>{fmt(v, true)}</b>
+                      </span>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           </div>
 
@@ -1001,7 +1014,7 @@ export default function Home() {
         {/* ── P&L Table ── */}
         <div className="card fu s6">
           <div className="ch">
-            <span className="ch-title">P&amp;L · Авг 2025 — {PNL_MONTHS[PNL_MONTHS.length-1].label}</span>
+            <span className="ch-title">P&amp;L · Апр 2026 — {PNL_MONTHS[PNL_MONTHS.length-1].label}</span>
             <span style={{ fontSize: '.68rem', color: 'var(--muted)' }}>← листайте</span>
           </div>
           <PnlTable />
