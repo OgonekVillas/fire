@@ -14,7 +14,9 @@ function startOfWeek(date: Date) {
 }
 
 function today() {
-  return new Date().toISOString().split('T')[0]
+  // Moscow UTC+3
+  const d = new Date(Date.now() + 3 * 3600000)
+  return d.toISOString().split('T')[0]
 }
 
 function daysAgo(n: number) {
@@ -39,7 +41,7 @@ export async function GET(req: NextRequest) {
 
   const now = new Date()
   const todayStr = today()
-  const weekStart = startOfWeek(now)
+  const weekStart = daysAgo(7)
   const monthStart = startOfMonth(now)
   const prevWeekStart = daysAgo(14)
   const prevWeekEnd = daysAgo(8)

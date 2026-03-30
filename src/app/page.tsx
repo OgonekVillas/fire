@@ -379,6 +379,135 @@ function PnlTable() {
   )
 }
 
+// ─── Weather Widget ───────────────────────────────────────────────
+const WMO_ICONS: Record<number, string> = {
+  0:'☀️',1:'🌤',2:'⛅',3:'☁️',45:'🌫',48:'🌫',51:'🌦',53:'🌦',55:'🌧',
+  61:'🌧',63:'🌧',65:'🌧',71:'🌨',73:'🌨',75:'❄️',80:'🌦',81:'🌧',82:'⛈',
+  85:'🌨',86:'❄️',95:'⛈',96:'⛈',99:'⛈',
+}
+const DAY_RU = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб']
+const MONTH_RU = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек']
+
+interface WeatherDay { date: string; tmax: number; tmin: number; rain: number; code: number }
+
+function WeatherWidget() {
+  const [days, setDays] = useState<WeatherDay[]|null>(null)
+  const [err, setErr] = useState(false)
+
+  useEffect(() => {
+    fetch('/api/weather').then(r => r.json()).then(d => {
+      if (!d.daily) { setErr(true); return }
+      const { time, temperature_2m_max, temperature_2m_min, precipitation_sum, weathercode } = d.daily
+      setDays(time.map((date: string, i: number) => ({
+        date,
+        tmax: Math.round(temperature_2m_max[i]),
+        tmin: Math.round(temperature_2m_min[i]),
+        rain: Math.round(precipitation_sum[i] * 10) / 10,
+        code: weathercode[i],
+      })))
+    }).catch(() => setErr(true))
+  }, [])
+
+  if (err) return null
+  if (!days) return (
+    <div className="card fu" style={{ padding: '12px 16px', fontSize: '.78rem', color: 'var(--muted)' }}>
+      Загрузка погоды...
+    </div>
+  )
+
+  return (
+    <div className="card fu" style={{ padding: '12px 16px' }}>
+      <div className="ch" style={{ marginBottom: 10 }}>
+        <span className="ch-title">🌤 Погода · 7 дней</span>
+        <span style={{ fontSize: '.68rem', color: 'var(--muted)' }}>Тверская обл.</span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 4 }}>
+        {days.map(day => {
+          const d = new Date(day.date + 'T12:00:00')
+          const isToday = day === days[0]
+          return (
+            <div key={day.date} style={{
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
+              background: isToday ? 'var(--cream)' : 'transparent',
+              borderRadius: 8, padding: '6px 4px',
+              border: isToday ? '1px solid var(--border)' : '1px solid transparent',
+            }}>
+              <span style={{ fontSize: '.65rem', color: 'var(--muted)', fontWeight: isToday ? 700 : 400 }}>
+                {isToday ? 'Сег.' : DAY_RU[d.getDay()]}
+              </span>
+              <span style={{ fontSize: '.65rem', color: 'var(--muted)' }}>
+                {d.getDate()} {MONTH_RU[d.getMonth()]}
+              </span>
+              <span style={{ fontSize: '1.3rem', lineHeight: 1 }}>{WMO_ICONS[day.code] || '🌡'}</span>
+              <span style={{ fontSize: '.75rem', fontWeight: 700, color: 'var(--text)' }}>{day.tmax > 0 ? '+' : ''}{day.tmax}°</span>
+              <span style={{ fontSize: '.65rem', color: 'var(--muted)' }}>{day.tmin > 0 ? '+' : ''}{day.tmin}°</span>
+              {day.rain > 0 && <span style={{ fontSize: '.62rem', color: '#3b82f6' }}>💧{day.rain}</span>}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ─── Forecast Widget ───────────────────────────────────────────────
+interface ForecastMonth { month: string; count: number; revenue: number }
+
+function ForecastWidget() {
+  const [data, setData] = useState<{ total: number; months: ForecastMonth[] }|null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch('/api/forecast').then(r => r.json()).then(d => { setData(d); setLoading(false) }).catch(() => setLoading(false))
+  }, [])
+
+  const monthName = (ym: string) => {
+    const [y, m] = ym.split('-')
+    return MONTH_RU[parseInt(m)-1] + ' ' + y.slice(2)
+  }
+
+  if (loading) return (
+    <div className="card fu" style={{ padding: '12px 16px', fontSize: '.78rem', color: 'var(--muted)' }}>
+      Загрузка прогноза...
+    </div>
+  )
+  if (!data || data.months.length === 0) return (
+    <div className="card fu" style={{ padding: '14px 16px' }}>
+      <div className="ch-title" style={{ fontSize: '.85rem' }}>📅 Прогноз выручки</div>
+      <div style={{ padding: '16px 0', textAlign: 'center', fontSize: '.8rem', color: 'var(--muted)' }}>
+        Нет будущих бронирований в Bnovo
+      </div>
+    </div>
+  )
+
+  const maxRev = Math.max(...data.months.map(m => m.revenue))
+
+  return (
+    <div className="card fu">
+      <div className="ch">
+        <span className="ch-title">📅 Прогноз выручки · Bnovo</span>
+        <span style={{ fontSize: '.72rem', color: 'var(--muted)' }}>{data.total} броней на 90 дн.</span>
+      </div>
+      <div style={{ padding: '10px 16px 14px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {data.months.map(m => (
+          <div key={m.month}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+              <span style={{ fontSize: '.82rem', fontWeight: 600, textTransform: 'capitalize' }}>{monthName(m.month)}</span>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                <span style={{ fontSize: '.72rem', color: 'var(--muted)' }}>{m.count} броней</span>
+                <span style={{ fontSize: '.88rem', fontWeight: 700, color: 'var(--green-pos)' }}>
+                  {fmt(m.revenue, true)} ₽
+                </span>
+              </div>
+            </div>
+            <ProgressBar value={m.revenue} max={maxRev} color="#1f2e1a" />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ─── AI Insights ──────────────────────────────────────────────────
 function AiInsights({ data }: { data: DashData }) {
   const [insights, setInsights] = useState<AiInsight[]|null>(null)
@@ -734,6 +863,9 @@ export default function Home() {
           </div>
         </div>
 
+        {/* ── Погода ── */}
+        <WeatherWidget />
+
         {/* ── 2-col: График + Расходы по статьям ── */}
         <div className="dash-row dash-row-62">
           {/* График динамики */}
@@ -862,6 +994,9 @@ export default function Home() {
             * % считается от выручки месяца
           </div>
         </div>
+
+        {/* ── Прогноз выручки ── */}
+        <ForecastWidget />
 
         {/* ── ИИ-аналитика ── */}
         <AiInsights data={data} />
