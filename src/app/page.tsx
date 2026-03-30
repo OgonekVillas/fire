@@ -354,8 +354,6 @@ function PnlTable() {
                 <td>{fmt(g(tot, row.key))} ₽</td>
               </tr>
             )
-            const anyData = rows.some(d => g(d, row.key) > 0)
-            if (!anyData) return null
             const isRevSub = (row as {revSub?:boolean}).revSub
             return (
               <tr key={row.key} className={row.sub || isRevSub ? 'pnl-sub' : ''}>
