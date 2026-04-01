@@ -16,6 +16,8 @@ interface DashData {
     revenue_fact: number; profit_fact: number
     revenue_diff: number; profit_diff: number
     revenue_diff_pct: string | null; profit_diff_pct: string | null
+      revenue_expected_today: number; profit_expected_today: number
+      day_of_month: number; days_in_month: number
   }
   chart: { date: string; revenue: number; expenses: number }[]
   categories: Record<string, number>
@@ -96,7 +98,30 @@ function ExpenseForm({ onDone }: { onDone: () => void }) {
   const [st, setSt] = useState<'idle'|'loading'|'ok'|'err'>('idle')
   const [warn, setWarn] = useState<string|null>(null)
   const [err, setErr] = useState('')
+  const [scanning, setScanning] = useState(false)
   const up = (k: string, v: string) => setF(p => ({ ...p, [k]: v }))
+
+  async function scanReceipt(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setScanning(true)
+    try {
+      const form = new FormData()
+      form.append('image', file)
+      const res = await fetch('/api/receipts', { method: 'POST', body: form })
+      if (res.ok) {
+        const d = await res.json()
+        setF(prev => ({
+          ...prev,
+          amount: d.amount || prev.amount,
+          date: d.date || prev.date,
+          category: d.category || prev.category,
+          comment: d.comment || prev.comment,
+        }))
+      }
+    } finally { setScanning(false) }
+    e.target.value = ''
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault(); setWarn(null); setErr('')
@@ -124,6 +149,14 @@ function ExpenseForm({ onDone }: { onDone: () => void }) {
 
   return (
     <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* Фото чека */}
+      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '10px', border: '2px dashed var(--border)', borderRadius: 10, cursor: 'pointer', background: scanning ? '#fff8f0' : '#fafaf8', transition: 'all .15s' }}>
+        <input type="file" accept="image/*" capture="environment" onChange={scanReceipt} style={{ display: 'none' }} />
+        <span style={{ fontSize: '1.2rem' }}>{scanning ? '⏳' : '📷'}</span>
+        <span style={{ fontSize: '.82rem', fontWeight: 600, color: 'var(--muted)' }}>
+          {scanning ? 'Распознаю чек...' : 'Сфотографировать чек — заполнится автоматически'}
+        </span>
+      </label>
       {warn && <div className="alert aw">⚠️ {warn}</div>}
       {st === 'ok' && <div className="alert aok">✓ Расход сохранён</div>}
       {st === 'err' && <div className="alert ae">✗ {err}</div>}
@@ -452,9 +485,9 @@ function WeatherWidget() {
 interface ForecastData {
   prev: { month: number; year: number; revenue: number; expenses: number; profit: number }
   curr: { month: number; year: number; revenue: number; expenses: number; profit: number }
-  projected: { revenue: number; profit: number }
-  progress: number
-  daysLeft: number
+  projected: { revenue: number; expenses: number; profit: number }
+  pace: { current: number; prev: number; vsPercent: number | null }
+  progress: number; dayOfMonth: number; daysInMonth: number; daysLeft: number
 }
 
 function ForecastWidget() {
@@ -472,50 +505,60 @@ function ForecastWidget() {
 
   const prevMonthName = MONTH_RU[data.prev.month - 1] + ' ' + String(data.prev.year).slice(2)
   const currMonthName = MONTH_RU[data.curr.month - 1] + ' ' + String(data.curr.year).slice(2)
-
-  const revDelta = data.prev.revenue > 0
-    ? Math.round((data.projected.revenue - data.prev.revenue) / data.prev.revenue * 100)
-    : null
-  const profitDelta = data.prev.profit > 0
-    ? Math.round((data.projected.profit - data.prev.profit) / data.prev.profit * 100)
-    : null
+  const paceUp = (data.pace.vsPercent ?? 0) >= 0
 
   return (
     <div className="card fu">
       <div className="ch">
         <span className="ch-title">📅 Прогноз · {currMonthName}</span>
-        <span style={{ fontSize: '.72rem', color: 'var(--muted)' }}>{data.progress}% месяца · осталось {data.daysLeft} дн.</span>
+        <span style={{ fontSize: '.72rem', color: 'var(--muted)' }}>{data.dayOfMonth} из {data.daysInMonth} дн. · осталось {data.daysLeft}</span>
       </div>
       <div style={{ padding: '12px 16px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <ProgressBar value={data.dayOfMonth} max={data.daysInMonth} color="#eb671c" />
 
-        {/* Прогресс месяца */}
-        <ProgressBar value={data.progress} max={100} color="#eb671c" />
-
-        {/* Сравнение */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 4 }}>
-          {[
-            { label: 'Выручка', prev: data.prev.revenue, proj: data.projected.revenue, delta: revDelta, color: '#eb671c' },
-            { label: 'Расходы', prev: data.prev.expenses, proj: data.curr.expenses, delta: null, color: '#1f2e1a' },
-            { label: 'Прибыль', prev: data.prev.profit, proj: data.projected.profit, delta: profitDelta, color: data.projected.profit >= 0 ? 'var(--green-pos)' : 'var(--red)' },
-          ].map(({ label, prev, proj, delta, color }) => (
-            <div key={label} style={{ background: 'var(--cream)', borderRadius: 10, padding: '10px 12px' }}>
-              <div style={{ fontSize: '.68rem', color: 'var(--muted)', marginBottom: 4 }}>{label}</div>
-              <div style={{ fontSize: '.82rem', fontWeight: 700, color }}>{fmt(proj, true)} ₽</div>
-              <div style={{ fontSize: '.65rem', color: 'var(--muted)', marginTop: 2 }}>
-                {prevMonthName}: {fmt(prev, true)} ₽
-              </div>
-              {delta !== null && (
-                <div style={{ fontSize: '.68rem', fontWeight: 700, color: delta >= 0 ? 'var(--green-pos)' : 'var(--red)', marginTop: 2 }}>
-                  {delta >= 0 ? '▲ +' : '▼ '}{delta}%
-                </div>
+        {/* Темп дня */}
+        {data.pace.current > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: paceUp ? '#f0fdf4' : '#fff8f0', borderRadius: 9, border: `1px solid ${paceUp ? '#bbf7d0' : '#fed7aa'}` }}>
+            <span style={{ fontSize: '1rem' }}>{paceUp ? '🚀' : '📉'}</span>
+            <div style={{ flex: 1 }}>
+              <span style={{ fontSize: '.78rem', fontWeight: 700, color: paceUp ? 'var(--green-pos)' : 'var(--orange)' }}>
+                Темп {fmt(data.pace.current, true)} ₽/день
+              </span>
+              {data.pace.vsPercent !== null && (
+                <span style={{ fontSize: '.72rem', color: 'var(--muted)', marginLeft: 8 }}>
+                  {paceUp ? '▲ +' : '▼ '}{Math.abs(data.pace.vsPercent)}% vs {prevMonthName}
+                </span>
               )}
             </div>
-          ))}
-        </div>
+            <span style={{ fontSize: '.68rem', color: 'var(--muted)' }}>
+              {prevMonthName}: {fmt(data.pace.prev, true)}/д
+            </span>
+          </div>
+        )}
 
-        <div style={{ fontSize: '.68rem', color: 'var(--muted)', paddingTop: 2 }}>
-          * Прогноз = факт на сегодня ÷ {data.progress}% месяца
+        {/* Карточки */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+          {[
+            { label: 'Выручка', prev: data.prev.revenue, proj: data.projected.revenue, color: '#eb671c' },
+            { label: 'Расходы', prev: data.prev.expenses, proj: data.projected.expenses, color: '#1f2e1a' },
+            { label: 'Прибыль', prev: data.prev.profit, proj: data.projected.profit, color: data.projected.profit >= 0 ? 'var(--green-pos)' : 'var(--red)' },
+          ].map(({ label, prev, proj, color }) => {
+            const delta = prev > 0 ? Math.round((proj - prev) / Math.abs(prev) * 100) : null
+            return (
+              <div key={label} style={{ background: 'var(--cream)', borderRadius: 10, padding: '10px 12px' }}>
+                <div style={{ fontSize: '.68rem', color: 'var(--muted)', marginBottom: 4 }}>{label}</div>
+                <div style={{ fontSize: '.85rem', fontWeight: 700, color }}>{fmt(proj, true)} ₽</div>
+                <div style={{ fontSize: '.65rem', color: 'var(--muted)', marginTop: 2 }}>{prevMonthName}: {fmt(prev, true)}</div>
+                {delta !== null && (
+                  <div style={{ fontSize: '.68rem', fontWeight: 700, color: delta >= 0 ? 'var(--green-pos)' : 'var(--red)', marginTop: 2 }}>
+                    {delta >= 0 ? '▲ +' : '▼ '}{Math.abs(delta)}%
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
+        <div style={{ fontSize: '.65rem', color: 'var(--muted)' }}>* Прогноз = текущий темп ({fmt(data.pace.current, true)} ₽/день) × {data.daysInMonth} дней</div>
       </div>
     </div>
   )
@@ -821,16 +864,20 @@ export default function Home() {
             <div className="card-p">
               <div className="kpi-label">Выручка · месяц</div>
               <div className="kpi-val">{fmt(data.revenue.month, true)} ₽</div>
-              {data.plan.revenue_plan > 0 && (
-                <>
-                  <div className="kpi-plan">план: {fmt(data.plan.revenue_plan, true)} ₽</div>
-                  <div className={`kpi-dev ${revDiff >= 0 ? 'kpi-dev-pos' : 'kpi-dev-neg'}`}>
-                    {revDiff >= 0 ? '▲ +' : '▼ '}{data.plan.revenue_diff_pct}%&nbsp;
-                    ({revDiff >= 0 ? '+' : ''}{fmt(revDiff, true)} ₽)
-                  </div>
-                  <ProgressBar value={data.plan.revenue_fact} max={data.plan.revenue_plan} color={revDiff >= 0 ? '#1a7a3a' : '#eb671c'} />
-                </>
-              )}
+              {data.plan.revenue_plan > 0 && (() => {
+                const expected = data.plan.revenue_expected_today
+                const onTrack = data.plan.revenue_fact >= expected
+                return (
+                  <>
+                    <div className="kpi-plan">план: {fmt(data.plan.revenue_plan, true)} ₽ · к сегодня: {fmt(expected, true)} ₽</div>
+                    <div className={`kpi-dev ${onTrack ? 'kpi-dev-pos' : 'kpi-dev-neg'}`}>
+                      {onTrack ? '▲ +' : '▼ '}{Math.abs(Number(data.plan.revenue_diff_pct))}% от плана&nbsp;
+                      ({revDiff >= 0 ? '+' : ''}{fmt(revDiff, true)} ₽)
+                    </div>
+                    <ProgressBar value={data.plan.revenue_fact} max={expected || data.plan.revenue_plan} color={onTrack ? '#1a7a3a' : '#eb671c'} />
+                  </>
+                )
+              })()}
               <div style={{ marginTop: 8, display: 'flex', gap: 14, fontSize: '.72rem' }}>
                 <span style={{ color: 'var(--muted)' }}>Сег.&nbsp;<b style={{ color: 'var(--text)' }}>{fmt(data.revenue.today, true) || '—'}</b></span>
                 <span style={{ color: 'var(--muted)' }}>7 дн.&nbsp;<b style={{ color: 'var(--text)' }}>{fmt(data.revenue.week, true) || '—'}</b></span>
@@ -872,25 +919,26 @@ export default function Home() {
               <div className="kpi-val" style={{ color: profitPos ? 'var(--green-pos)' : 'var(--red)' }}>
                 {fmt(data.profit.month, true)} ₽
               </div>
-              {data.plan.profit_plan > 0 && (
-                <>
-                  <div className="kpi-plan">план: {fmt(data.plan.profit_plan, true)} ₽</div>
-                  <div className={`kpi-dev ${profitDiff >= 0 ? 'kpi-dev-pos' : 'kpi-dev-neg'}`}>
-                    {profitDiff >= 0 ? '▲ +' : '▼ '}{data.plan.profit_diff_pct}%&nbsp;
-                    ({profitDiff >= 0 ? '+' : ''}{fmt(profitDiff, true)} ₽)
-                  </div>
-                  <ProgressBar value={data.plan.profit_fact} max={data.plan.profit_plan} color={profitDiff >= 0 ? '#1a7a3a' : '#eb671c'} />
-                </>
-              )}
+              {data.plan.profit_plan > 0 && (() => {
+                const expected = data.plan.profit_expected_today
+                const onTrack = data.plan.profit_fact >= expected
+                return (
+                  <>
+                    <div className="kpi-plan">план: {fmt(data.plan.profit_plan, true)} ₽ · к сегодня: {fmt(expected, true)} ₽</div>
+                    <div className={`kpi-dev ${onTrack ? 'kpi-dev-pos' : 'kpi-dev-neg'}`}>
+                      {onTrack ? '▲ +' : '▼ '}{Math.abs(Number(data.plan.profit_diff_pct))}% от плана&nbsp;
+                      ({profitDiff >= 0 ? '+' : ''}{fmt(profitDiff, true)} ₽)
+                    </div>
+                    <ProgressBar value={data.plan.profit_fact} max={expected || data.plan.profit_plan} color={onTrack ? '#1a7a3a' : '#eb671c'} />
+                  </>
+                )
+              })()}
               <div className={`badge ${profitPos ? 'bp' : 'bn'}`} style={{ marginTop: 8 }}>
                 {profitPos ? '▲' : '▼'} маржа {Math.abs(marginPct).toFixed(1)}%
               </div>
             </div>
           </div>
         </div>
-
-        {/* ── Погода ── */}
-        <WeatherWidget />
 
         {/* ── 2-col: График + Расходы по статьям ── */}
         <div className="dash-row dash-row-62">
@@ -1020,6 +1068,9 @@ export default function Home() {
             * % считается от выручки месяца
           </div>
         </div>
+
+        {/* ── Погода ── */}
+        <WeatherWidget />
 
         {/* ── Прогноз выручки ── */}
         <ForecastWidget />

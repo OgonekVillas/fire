@@ -122,10 +122,15 @@ export async function GET(req: NextRequest) {
     revBySource[src] = (revBySource[src] || 0) + Number(r.amount)
   }
 
-  // План vs факт
+  // План vs факт + дневной темп
   const plan = planMonth.data ?? null
   const revPlanTotal = plan?.revenue_plan ?? 0
   const profitPlanTotal = plan?.profit_plan ?? 0
+
+  const dayOfMonth = now.getDate()
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
+  const revExpectedByToday = revPlanTotal > 0 ? Math.round(revPlanTotal / daysInMonth * dayOfMonth) : 0
+  const profitExpectedByToday = profitPlanTotal > 0 ? Math.round(profitPlanTotal / daysInMonth * dayOfMonth) : 0
 
   // Рекомендации
   const alerts: { type: 'warning' | 'info'; message: string }[] = []
@@ -166,6 +171,10 @@ export async function GET(req: NextRequest) {
       profit_diff: profitMonth - profitPlanTotal,
       revenue_diff_pct: revPlanTotal > 0 ? (((revMonthTotal - revPlanTotal) / revPlanTotal) * 100).toFixed(1) : null,
       profit_diff_pct: profitPlanTotal > 0 ? (((profitMonth - profitPlanTotal) / profitPlanTotal) * 100).toFixed(1) : null,
+      revenue_expected_today: revExpectedByToday,
+      profit_expected_today: profitExpectedByToday,
+      day_of_month: dayOfMonth,
+      days_in_month: daysInMonth,
     },
     chart,
     categories,
