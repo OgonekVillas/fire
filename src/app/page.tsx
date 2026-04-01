@@ -817,6 +817,14 @@ export default function Home() {
   const revDiff = data.plan.revenue_diff
   const profitDiff = data.plan.profit_diff
 
+  // Отклонение от ожидаемого к СЕГОДНЯ (не от полного плана)
+  const revExpected = data.plan.revenue_expected_today
+  const profitExpected = data.plan.profit_expected_today
+  const revDiffFromExpected = data.plan.revenue_fact - revExpected
+  const profitDiffFromExpected = data.plan.profit_fact - profitExpected
+  const revPctFromExpected = revExpected > 0 ? (revDiffFromExpected / revExpected * 100).toFixed(1) : null
+  const profitPctFromExpected = profitExpected > 0 ? (profitDiffFromExpected / profitExpected * 100).toFixed(1) : null
+
   return (
     <>
       {showAdd && <AddSheet onClose={() => setShowAdd(false)} onDone={() => { setShowAdd(false); setTick(t => t+1) }} />}
@@ -865,16 +873,17 @@ export default function Home() {
               <div className="kpi-label">Выручка · месяц</div>
               <div className="kpi-val">{fmt(data.revenue.month, true)} ₽</div>
               {data.plan.revenue_plan > 0 && (() => {
-                const expected = data.plan.revenue_expected_today
-                const onTrack = data.plan.revenue_fact >= expected
+                const onTrack = revDiffFromExpected >= 0
                 return (
                   <>
-                    <div className="kpi-plan">план: {fmt(data.plan.revenue_plan, true)} ₽ · к сегодня: {fmt(expected, true)} ₽</div>
-                    <div className={`kpi-dev ${onTrack ? 'kpi-dev-pos' : 'kpi-dev-neg'}`}>
-                      {onTrack ? '▲ +' : '▼ '}{Math.abs(Number(data.plan.revenue_diff_pct))}% от плана&nbsp;
-                      ({revDiff >= 0 ? '+' : ''}{fmt(revDiff, true)} ₽)
-                    </div>
-                    <ProgressBar value={data.plan.revenue_fact} max={expected || data.plan.revenue_plan} color={onTrack ? '#1a7a3a' : '#eb671c'} />
+                    <div className="kpi-plan">план: {fmt(data.plan.revenue_plan, true)} ₽ · ожидалось к сегодня: {fmt(revExpected, true)} ₽</div>
+                    {revPctFromExpected !== null && (
+                      <div className={`kpi-dev ${onTrack ? 'kpi-dev-pos' : 'kpi-dev-neg'}`}>
+                        {onTrack ? '▲ +' : '▼ '}{Math.abs(Number(revPctFromExpected))}% от темпа&nbsp;
+                        ({revDiffFromExpected >= 0 ? '+' : ''}{fmt(revDiffFromExpected, true)} ₽)
+                      </div>
+                    )}
+                    <ProgressBar value={data.plan.revenue_fact} max={revExpected || data.plan.revenue_plan} color={onTrack ? '#1a7a3a' : '#eb671c'} />
                   </>
                 )
               })()}
@@ -920,16 +929,17 @@ export default function Home() {
                 {fmt(data.profit.month, true)} ₽
               </div>
               {data.plan.profit_plan > 0 && (() => {
-                const expected = data.plan.profit_expected_today
-                const onTrack = data.plan.profit_fact >= expected
+                const onTrack = profitDiffFromExpected >= 0
                 return (
                   <>
-                    <div className="kpi-plan">план: {fmt(data.plan.profit_plan, true)} ₽ · к сегодня: {fmt(expected, true)} ₽</div>
-                    <div className={`kpi-dev ${onTrack ? 'kpi-dev-pos' : 'kpi-dev-neg'}`}>
-                      {onTrack ? '▲ +' : '▼ '}{Math.abs(Number(data.plan.profit_diff_pct))}% от плана&nbsp;
-                      ({profitDiff >= 0 ? '+' : ''}{fmt(profitDiff, true)} ₽)
-                    </div>
-                    <ProgressBar value={data.plan.profit_fact} max={expected || data.plan.profit_plan} color={onTrack ? '#1a7a3a' : '#eb671c'} />
+                    <div className="kpi-plan">план: {fmt(data.plan.profit_plan, true)} ₽ · ожидалось: {fmt(profitExpected, true)} ₽</div>
+                    {profitPctFromExpected !== null && (
+                      <div className={`kpi-dev ${onTrack ? 'kpi-dev-pos' : 'kpi-dev-neg'}`}>
+                        {onTrack ? '▲ +' : '▼ '}{Math.abs(Number(profitPctFromExpected))}% от темпа&nbsp;
+                        ({profitDiffFromExpected >= 0 ? '+' : ''}{fmt(profitDiffFromExpected, true)} ₽)
+                      </div>
+                    )}
+                    <ProgressBar value={data.plan.profit_fact} max={profitExpected || data.plan.profit_plan} color={onTrack ? '#1a7a3a' : '#eb671c'} />
                   </>
                 )
               })()}
